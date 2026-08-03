@@ -30,6 +30,7 @@ class TaskManager
 private:
     sqlite3* db;
 
+    // SQLite helper function
     bool executeSQL(const std::string& sql) 
     {
         char* errMsg = nullptr;
@@ -42,7 +43,17 @@ private:
         return true;
     }
 
+    bool DBCheck()
+    {
+        if (!db) {
+        std::cerr << "Database not open." << std::endl;
+        return false;
+    }
+    return true;
+    }
+
 public:
+    // constructor
     TaskManager(const std::string& dbPath)
     {
         int rc = sqlite3_open(dbPath.c_str(), &db);
@@ -77,6 +88,7 @@ public:
         executeSQL("CREATE INDEX IF NOT EXISTS idx_tasks_parentID ON Task(ParentID);");
     }
 
+    // destructor
     TaskManager()
     {
         if (db)
@@ -85,9 +97,10 @@ public:
         }
     }
 
+    // task existence verifier. also returns level.
     int getTaskLevel(int TaskID)
     {
-        if (!db) return -1;
+        if (!DBCheck()) return -1;
         
         const char* searchDB = "SELECT level FROM Task WHERE TaskID = ?;";
         sqlite3_stmt* stmt;
@@ -118,7 +131,7 @@ public:
         int parentID = -1
     )
     {
-        if (!db) return -1;
+        if (!DBCheck()) return -1;
 
         int parent_level;
 
@@ -181,7 +194,7 @@ public:
         return true;
     }
 
-    std::vector<Task> SearchTask(
+    std::vector<Task> searchTask(
         const std::string& keyword = "",
         const std:: string& status = "",
         int priority = -1,
@@ -191,7 +204,7 @@ public:
     )
     {   
         std::vector<Task> results;
-        if (!db) return results;
+        if (!DBCheck()) return results;
         
         sqlite3_stmt* stmt;
         std::string sql = "SELECT * FROM Task WHERE 1=1";
@@ -243,5 +256,132 @@ public:
 
         sqlite3_finalize(stmt);
         return results;
+    }
+
+    bool deleteTask(int taskID)
+    {
+        if (!DBCheck()) return false;
+
+        if (getTaskLevel(taskID) == -1) 
+        {
+            std::cerr << "TaskID "<< taskID << "not found. "<< std::endl;
+            return false;
+        }
+
+        sqlite3_stmt* stmt;
+        const char* sql = "DELETE FROM Tasks WHERE TaskID = ?";
+
+        int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+
+        if (rc != SQLITE_OK )
+        {
+            std::cerr << "Failed to prepare delete: " << sqlite3_errmsg(db) << std::endl;
+            return false;
+        }
+        
+        sqlite3_bind_int(stmt, 1, taskID);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE)
+        {
+            std::cerr << "Failed to delete task: " << sqlite3_errmsg(db) << std::endl;
+            return false ;
+        }
+        
+
+        int changes = sqlite3_changes(db);
+        if (changes == 0) 
+        {
+            std::cerr << "Task ID " << taskID << " not found." << std::endl;
+            return false;
+        }
+        return true; 
+        
+    }
+
+    bool updateTask(
+        int taskID,
+        const std::string& taskInfo = "",
+        const std::string& status = "",
+        const std::string& creation = "",
+        const std::string& deadline = "",
+        const std::string& category = "",
+        int priority = -1,
+        int progress = -1
+    ) 
+    {
+        if (!DBCheck()) return false;
+
+
+        if (getTaskLevel(taskID) == -1) 
+        {
+            std::cerr << "Task ID " << taskID << " not found." << std::endl;
+            return false;
+        }
+
+        std::string sql = "UPDATE Task SET ";
+        std::vector<std::string> updates;
+
+        // Only add fields that are provided (non-default values)
+        if (!taskInfo.empty()) updates.push_back("TaskInfo = ?");
+        if (!status.empty()) updates.push_back("Status = ?");
+        if (!creation.empty()) updates.push_back("CreatedDate = ?");
+        if (!deadline.empty()) updates.push_back("Deadline = ?");
+        if (!category.empty()) updates.push_back("Category = ?");
+        if (priority != -1) updates.push_back("Priority = ?");
+        if (progress != -1) updates.push_back("Progress = ?");
+
+
+        if (updates.empty()) 
+        {
+            std::cerr << "No fields to update." << std::endl;
+            return false;
+        }
+
+        for (size_t i = 0; i < updates.size(); ++i) 
+        {
+            if (i > 0) sql += ", ";
+            sql += updates[i];
+        }
+        sql += " WHERE TaskID = ?;";
+
+        sqlite3_stmt* stmt;
+        int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "Failed to prepare update: " << sqlite3_errmsg(db) << std::endl;
+            return false;
+        }
+
+        int bindIndex = 1;
+
+        if (!taskInfo.empty()) sqlite3_bind_text(stmt, bindIndex++, taskInfo.c_str(), -1, SQLITE_TRANSIENT);
+        if (!status.empty()) sqlite3_bind_text(stmt, bindIndex++, status.c_str(), -1, SQLITE_TRANSIENT);
+        if (!creation.empty()) sqlite3_bind_text(stmt, bindIndex++, creation.c_str(), -1, SQLITE_TRANSIENT);
+        if (!deadline.empty()) sqlite3_bind_text(stmt, bindIndex++, deadline.c_str(), -1, SQLITE_TRANSIENT);
+        if (!category.empty()) sqlite3_bind_text(stmt, bindIndex++, category.c_str(), -1, SQLITE_TRANSIENT);
+        if (priority != -1) sqlite3_bind_int(stmt, bindIndex++, priority);
+        if (progress != -1) sqlite3_bind_int(stmt, bindIndex++, progress);
+
+
+        sqlite3_bind_int(stmt, bindIndex, taskID);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE) {
+            std::cerr << "Failed to update task: " << sqlite3_errmsg(db) << std::endl;
+            return false;
+        }
+
+        int changes = sqlite3_changes(db);
+        if (changes == 0) {
+            std::cerr << "Task ID " << taskID << " not found or no changes made." << std::endl;
+            return false;
+        }
+
+        std::cout << "Task " << taskID << " updated successfully." << std::endl;
+        return true;
     }
 };

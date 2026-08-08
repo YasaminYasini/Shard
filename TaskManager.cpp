@@ -46,7 +46,7 @@ TaskManager::TaskManager(const std::string& dbPath)
     executeSQL("PRAGMA foreign_keys = ON;");
 
     const char* createTableSQL = R"(
-    CREATE TABLE Task (
+    CREATE TABLE IF NOT EXISTS Task (
         TaskID    INTEGER PRIMARY KEY CHECK( TaskID >= 1 ),
         ParentID  INTEGER,
         Level     INTEGER DEFAULT 1 CHECK( Level >= 1 AND Level <= 3 ),
@@ -183,6 +183,12 @@ bool TaskManager::addTask(
     std::cout << "Inserted successfully" << std::endl;
     return true;
 }
+
+std::string getTextOrEmpty(sqlite3_stmt* stmt, int col) {
+    const unsigned char* text = sqlite3_column_text(stmt, col);
+    return (text) ? reinterpret_cast<const char*>(text) : "";
+}
+
 std::vector<Task> TaskManager::searchTask(
     const std::string& keyword,
     const std:: string& status,
@@ -236,13 +242,13 @@ std::vector<Task> TaskManager::searchTask(
             task.id = sqlite3_column_int(stmt, 0);
             task.parentId = sqlite3_column_int(stmt, 1);
             task.level = sqlite3_column_int(stmt, 2);
-            task.info = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-            task.status = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+            task.info = getTextOrEmpty(stmt, 3);
+            task.status = getTextOrEmpty(stmt, 4);
             task.priority = sqlite3_column_int(stmt, 5);
             task.progress = sqlite3_column_int(stmt, 6);
-            task.createdDate = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
-            task.deadline = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
-            task.category = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+            task.createdDate =getTextOrEmpty(stmt, 7);
+            task.deadline =getTextOrEmpty(stmt, 8);
+            task.category =getTextOrEmpty(stmt, 9);
             
             
             results.push_back(task);

@@ -52,6 +52,8 @@ public:
 
     std::vector<Task> getSubTasks(int parentID);
 
+    std::string getTextOrEmpty(sqlite3_stmt* stmt, int col);
+
     std::vector<Task> searchTask(
         const std::string& keyword = "", 
         const std:: string& status = "", 

@@ -1,35 +1,12 @@
 # include "TaskManager.h"
 # include "TaskConf.h"
+# include "Database.h"
 # include <iostream>
 # include <sqlite3.h>
 # include <string>
 # include <memory>
 # include <vector>
 
-
-
-// SQLite helper function
-bool TaskManager::executeSQL(const std::string& sql) 
-{
-    char* errMsg = nullptr;
-    int rc = sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &errMsg);
-    if (rc != SQLITE_OK) {
-        std::cerr << "SQL Error: " << errMsg << std::endl;
-        sqlite3_free(errMsg);
-        return false;
-    }
-    return true;
-}
-
-
-bool TaskManager::DBCheck()
-{
-    if (!db) {
-    std::cerr << "Database not open." << std::endl;
-    return false;
-}
-return true;
-}
 
 
 // constructor
@@ -43,9 +20,10 @@ TaskManager::TaskManager(const std::string& dbPath)
         return;
     }
 
-    executeSQL("PRAGMA foreign_keys = ON;");
+    Database::executeSQL(db, "PRAGMA foreign_keys = ON;");
 
-    const char* createTableSQL = R"(
+    const char* createTableSQL = 
+    R"(
     CREATE TABLE IF NOT EXISTS Task (
         TaskID    INTEGER PRIMARY KEY CHECK( TaskID >= 1 ),
         ParentID  INTEGER,
@@ -61,8 +39,8 @@ TaskManager::TaskManager(const std::string& dbPath)
     );
     )";
 
-    executeSQL(createTableSQL);
-    executeSQL("CREATE INDEX IF NOT EXISTS idx_tasks_parentID ON Task(ParentID);");
+    Database::executeSQL(db, createTableSQL);
+    Database::executeSQL(db, "CREATE INDEX IF NOT EXISTS idx_tasks_parentID ON Task(ParentID);");
 }
 
 
@@ -79,7 +57,7 @@ TaskManager::~TaskManager()
 // task existence verifier. also returns level.
 int TaskManager::getTaskLevel(int TaskID)
 {
-    if (!DBCheck()) return -1;
+    if (!Database::DBCheck(db)) return -1;
     
     const char* searchDB = "SELECT level FROM Task WHERE TaskID = ?;";
 
@@ -115,7 +93,7 @@ bool TaskManager::addTask(
     const std::string& creation
 )
 {
-    if (!DBCheck()) return false;
+    if (!Database::DBCheck(db)) return false;
     int parent_level;
 
     if (parentID != -1)
@@ -184,11 +162,6 @@ bool TaskManager::addTask(
     return true;
 }
 
-std::string TaskManager::getTextOrEmpty(sqlite3_stmt* stmt, int col) {
-    const unsigned char* text = sqlite3_column_text(stmt, col);
-    return (text) ? reinterpret_cast<const char*>(text) : "";
-}
-
 std::vector<Task> TaskManager::searchTask(
     const std::string& keyword,
     const std:: string& status,
@@ -202,7 +175,7 @@ std::vector<Task> TaskManager::searchTask(
 )
 {   
     std::vector<Task> results;
-    if (!DBCheck()) return results;
+    if (!Database::DBCheck(db)) return results;
     
     sqlite3_stmt* stmt;
     std::string sql = "SELECT * FROM Task WHERE 1=1";
@@ -242,13 +215,13 @@ std::vector<Task> TaskManager::searchTask(
             task.id = sqlite3_column_int(stmt, 0);
             task.parentId = sqlite3_column_int(stmt, 1);
             task.level = sqlite3_column_int(stmt, 2);
-            task.info = getTextOrEmpty(stmt, 3);
-            task.status = getTextOrEmpty(stmt, 4);
+            task.info = Database::getTextOrEmpty(stmt, 3);
+            task.status = Database::getTextOrEmpty(stmt, 4);
             task.priority = sqlite3_column_int(stmt, 5);
             task.progress = sqlite3_column_int(stmt, 6);
-            task.createdDate =getTextOrEmpty(stmt, 7);
-            task.deadline =getTextOrEmpty(stmt, 8);
-            task.category =getTextOrEmpty(stmt, 9);
+            task.createdDate =Database::getTextOrEmpty(stmt, 7);
+            task.deadline =Database::getTextOrEmpty(stmt, 8);
+            task.category =Database::getTextOrEmpty(stmt, 9);
             
             
             results.push_back(task);
@@ -261,7 +234,7 @@ std::vector<Task> TaskManager::searchTask(
 
 bool TaskManager::deleteTask(int taskID)
 {
-    if (!DBCheck()) return false;
+    if (!Database::DBCheck(db)) return false;
 
     if (getTaskLevel(taskID) == -1) 
     {
@@ -314,7 +287,7 @@ bool TaskManager::updateTask(
     int progress
 ) 
 {
-    if (!DBCheck()) return false;
+    if (!Database::DBCheck(db)) return false;
     if (getTaskLevel(taskID) == -1) 
     {
         std::cerr << "Task ID " << taskID << " not found." << std::endl;
@@ -400,7 +373,7 @@ std::vector<Task> TaskManager::getSubTasks(int TaskID)
 Task TaskManager::retrieveTask(int taskID) {
     Task result;
 
-    if (!DBCheck()) return result;
+    if (!Database::DBCheck(db)) return result;
 
     const char* sql = "SELECT * FROM Task WHERE TaskID = ?;";
     sqlite3_stmt* stmt;
@@ -417,13 +390,13 @@ Task TaskManager::retrieveTask(int taskID) {
         result.id = sqlite3_column_int(stmt, 0);
         result.parentId = sqlite3_column_int(stmt, 1);
         result.level = sqlite3_column_int(stmt, 2);
-        result.info = getTextOrEmpty(stmt, 3);
-        result.status = getTextOrEmpty(stmt, 4);
+        result.info = Database::getTextOrEmpty(stmt, 3);
+        result.status = Database::getTextOrEmpty(stmt, 4);
         result.priority = sqlite3_column_int(stmt, 5);
         result.progress = sqlite3_column_int(stmt, 6);
-        result.category = getTextOrEmpty(stmt, 7);
-        result.createdDate = getTextOrEmpty(stmt, 8);
-        result.deadline = getTextOrEmpty(stmt, 9);
+        result.category = Database::getTextOrEmpty(stmt, 7);
+        result.createdDate = Database::getTextOrEmpty(stmt, 8);
+        result.deadline = Database::getTextOrEmpty(stmt, 9);
     }
 
     sqlite3_finalize(stmt);

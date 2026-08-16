@@ -93,6 +93,7 @@ private:
     bool executeSQL(const std::string& sql);
     bool DBCheck();
     std::string getTextOrEmpty(sqlite3_stmt* stmt, int col);
+    getIntColumn(int habitID, const std::string& columnNme);
 
 public:
     HabitManager(Database& database);

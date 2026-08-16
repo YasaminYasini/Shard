@@ -360,7 +360,7 @@ std::vector<Habit> HabitManager::getActiveHabits(bool active)
     return habits;
 }
 
-bool HabitManager::archiveHabit(int HabitID, bool archive)
+bool HabitManager::archiveHabit(int habitID, bool archive)
 {
     if (!Database::DBCheck(db)) return false;
     if (!habitExists(habitID)) return false;
@@ -376,7 +376,7 @@ bool HabitManager::archiveHabit(int HabitID, bool archive)
         sql = "UPDATE Habit SET Active = 1 WHERE HabitID = ?;";
     }
 
-    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK)
     {
         std::cerr << "Failed to prepare archive: " << sqlite3_errmsg(db) << std::endl;
@@ -412,4 +412,49 @@ bool HabitManager::archiveHabit(int HabitID, bool archive)
     return true;
 }
 
+// ===== Streak Functions =====
+int HabitManager::getIntColumn(int habitID, const std::string& columnName)
+{
+    if (!Database::DBCheck(db)) return -1;
+    if (!habitExists(habitID)) return -1;
 
+    sqlite3_stmt* stmt;
+    std::string sql = "SELECT " + columnName + " FROM Habit WHERE HabitID = ?;";
+
+    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) 
+    {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return -1;
+    }
+
+    sqlite3_bind_int(stmt, 1, habitID);
+    rc = sqlite3_step(stmt);
+
+    if (rc != SQLITE_ROW) 
+    {
+        std::cerr << "Failed to retrieve " << columnName << " for habit " << habitID << std::endl;
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    int result = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+
+int HabitManager::getCurrentStreak(int habitID) 
+{
+    return getIntColumn(habitID, "Streak");
+}
+
+int HabitManager::getBestStreak(int habitID) 
+{
+    return getIntColumn(habitID, "BestStreak");
+}
+
+int HabitManager::getTotalCompletions(int habitID) 
+{
+    return getIntColumn(habitID, "TotalDone");
+}

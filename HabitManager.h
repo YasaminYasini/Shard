@@ -88,21 +88,20 @@ struct HabitCalendarData {
 
 class HabitManager {
 private:
-    Database& db;
+    sqlite3* db;
 
     bool executeSQL(const std::string& sql);
     bool DBCheck();
     std::string getTextOrEmpty(sqlite3_stmt* stmt, int col);
-    getIntColumn(int habitID, const std::string& columnNme);
 
 public:
-    HabitManager(Database& database);
+    HabitManager(const std::string& dbPath);
     ~HabitManager();
 
     // ===== Habit Table Functions =====
     bool addHabit(const std::string& name, const std::string& category = "General", int priority = 3);
     bool deleteHabit(int habitID);
-    bool updateHabit(int habitID, const std::string& name = "", const std::string& category = "", int priority);
+    bool updateHabit(int habitID, int priority, const std::string& name = "", const std::string& category = "");
     Habit getHabit(int habitID);
     bool habitExists(int habitID);
     std::vector<Habit> getAllHabits();
@@ -118,6 +117,7 @@ public:
     HabitCalendarData getHabitCalendar(int habitID);
 
     // ===== Streak Functions =====
+    int getIntColumn(int habitID, const std::string& columnName);
     int getCurrentStreak(int habitID);
     int getBestStreak(int habitID);
     int getTotalCompletions(int habitID);

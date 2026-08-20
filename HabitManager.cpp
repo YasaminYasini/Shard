@@ -1,5 +1,5 @@
 # include "HabitManager.h"
-# include "HabitConf.h"
+//# include "HabitConf.h"
 # include "Database.h"
 # include <iostream>
 # include <sqlite3.h>
@@ -21,8 +21,8 @@ HabitManager::HabitManager(const std::string& dbPath)
 
     const char* createHabitSQL = 
     R"(
-    CREATE TABLE Habit (
-    HabitID     INTEGER PRIMARY KEY( HabitID >= 1),
+    CREATE TABLE IF NOT EXISTS Habit (
+    HabitID     INTEGER PRIMARY KEY CHECK( HabitID >= 1),
     Name        TEXT NOT NULL,
     Category    TEXT DEFAULT 'General',
     Priority    INTEGER DEFAULT 3 CHECK( Priority >= 1 AND Priority <= 5 ),
@@ -38,17 +38,17 @@ HabitManager::HabitManager(const std::string& dbPath)
 
     const char* createHabitHistorySQL = 
     R"(
-    CREATE TABLE HabitHistory (
+    CREATE TABLE IF NOT EXISTS HabitHistory (
     HistoryID   INTEGER PRIMARY KEY,
     HabitID     INTEGER,
     DoneDate    TEXT DEFAULT (date('now')),
     Count       INTEGER DEFAULT 1,            -- For habits that can be done multiple times/day
     FOREIGN KEY (HabitID) REFERENCES Habit(HabitID) ON DELETE CASCADE
     );
-    )"
+    )";
 
     Database::executeSQL(db, createHabitSQL);
-    Database::executeSQL(db, createHabitHistorySQL)
+    Database::executeSQL(db, createHabitHistorySQL);
 }
 
 
@@ -56,7 +56,7 @@ HabitManager::~HabitManager()
 {
     if (db)
     {
-        sqlite3_close()
+        sqlite3_close(db);
     }
 }
 
@@ -71,7 +71,7 @@ bool HabitManager::addHabit(
     sqlite3_stmt* stmt;
     const char* sql = "INSERT INTO Habit (Name, Category, Priority, CreatedDate) VALUES (?, ?, ?, date('now'));";
 
-    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
 
     if (rc!= SQLITE_OK)
     {
@@ -80,7 +80,12 @@ bool HabitManager::addHabit(
     }
 
     if (priority < 1) priority = 1;
-    if (priority < 5) priority = 5; 
+    if (priority > 5) priority = 5; 
+    if (name.empty())
+    {
+        std::cout << "Failed to create habit: missing argument <Name>" << std::endl;
+        return false;
+    }
 
     int binder = 1;
     sqlite3_bind_text(stmt, binder++, name.c_str(), -1, SQLITE_TRANSIENT);
@@ -142,11 +147,12 @@ bool HabitManager::deleteHabit(int habitID)
 }
 
 
-bool updateHabit(
+bool HabitManager::updateHabit(
     int habitID, 
+    int priority,
     const std::string& name, 
-    const std::string& category, 
-    int priority)
+    const std::string& category
+    )
 {
     if (!Database::DBCheck(db)) return false;
     if (!habitExists(habitID)) return false;
@@ -157,7 +163,7 @@ bool updateHabit(
 
     if (!name.empty()) updates.push_back("Name = ?");
     if (!category.empty()) updates.push_back("Category = ?");
-    if (priority != -1) updates.push_back("Priority = ?")
+    if (priority != -1) updates.push_back("Priority = ?");
 
     if (updates.empty())
     {
@@ -173,7 +179,7 @@ bool updateHabit(
 
     sql += " WHERE HabitID = ?";
 
-    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, nullptr);
+    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK)
     {
         std::cerr << "Failed to prepare update: " << sqlite3_errmsg(db) << std::endl;
@@ -213,7 +219,7 @@ Habit HabitManager::getHabit(int habitID)
 {
     Habit habit;
 
-    if (!DBCheck()) return habit;
+    if (!Database::DBCheck(db)) return habit;
 
     sqlite3_stmt* stmt;
     const char* sql = "SELECT * FROM Habit WHERE HabitID = ?;";
@@ -233,12 +239,12 @@ Habit HabitManager::getHabit(int habitID)
     if (rc == SQLITE_ROW) 
     {
         habit.id = sqlite3_column_int(stmt, 0);
-        habit.name = getTextOrEmpty(stmt, 1);
-        habit.category = getTextOrEmpty(stmt, 2);
+        habit.name = Database::getTextOrEmpty(stmt, 1);
+        habit.category = Database::getTextOrEmpty(stmt, 2);
         habit.priority = sqlite3_column_int(stmt, 3);
-        habit.createdDate = getTextOrEmpty(stmt, 4);
+        habit.createdDate = Database::getTextOrEmpty(stmt, 4);
         habit.active = sqlite3_column_int(stmt, 5);
-        habit.lastDone = getTextOrEmpty(stmt, 6);
+        habit.lastDone = Database::getTextOrEmpty(stmt, 6);
         habit.streak = sqlite3_column_int(stmt, 7);
         habit.bestStreak = sqlite3_column_int(stmt, 8);
         habit.totalDone = sqlite3_column_int(stmt, 9);
@@ -296,12 +302,12 @@ std::vector<Habit> HabitManager::getAllHabits()
     {
         Habit habit;
         habit.id = sqlite3_column_int(stmt, 0);
-        habit.name = getTextOrEmpty(stmt, 1);
-        habit.category = getTextOrEmpty(stmt, 2);
+        habit.name = Database::getTextOrEmpty(stmt, 1);
+        habit.category = Database::getTextOrEmpty(stmt, 2);
         habit.priority = sqlite3_column_int(stmt, 3);
-        habit.createdDate = getTextOrEmpty(stmt, 4);
+        habit.createdDate = Database::getTextOrEmpty(stmt, 4);
         habit.active = sqlite3_column_int(stmt, 5);
-        habit.lastDone = getTextOrEmpty(stmt, 6);
+        habit.lastDone = Database::getTextOrEmpty(stmt, 6);
         habit.streak = sqlite3_column_int(stmt, 7);
         habit.bestStreak = sqlite3_column_int(stmt, 8);
         habit.totalDone = sqlite3_column_int(stmt, 9);
@@ -345,12 +351,12 @@ std::vector<Habit> HabitManager::getActiveHabits(bool active)
     {
         Habit habit;
         habit.id = sqlite3_column_int(stmt, 0);
-        habit.name = getTextOrEmpty(stmt, 1);
-        habit.category = getTextOrEmpty(stmt, 2);
+        habit.name = Database::getTextOrEmpty(stmt, 1);
+        habit.category = Database::getTextOrEmpty(stmt, 2);
         habit.priority = sqlite3_column_int(stmt, 3);
-        habit.createdDate = getTextOrEmpty(stmt, 4);
+        habit.createdDate = Database::getTextOrEmpty(stmt, 4);
         habit.active = sqlite3_column_int(stmt, 5);
-        habit.lastDone = getTextOrEmpty(stmt, 6);
+        habit.lastDone = Database::getTextOrEmpty(stmt, 6);
         habit.streak = sqlite3_column_int(stmt, 7);
         habit.bestStreak = sqlite3_column_int(stmt, 8);
         habit.totalDone = sqlite3_column_int(stmt, 9);

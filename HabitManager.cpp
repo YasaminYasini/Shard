@@ -63,7 +63,7 @@ HabitManager::~HabitManager()
 bool HabitManager::addHabit(
     const std::string& name,
     const std::string& category,
-    int priority,
+    int priority
 )
 {
     if (!Database::DBCheck(db)) return false;
@@ -79,12 +79,15 @@ bool HabitManager::addHabit(
         return false;
     }
 
+    if (priority < 1) priority = 1;
+    if (priority < 5) priority = 5; 
+
     int binder = 1;
     sqlite3_bind_text(stmt, binder++, name.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, binder++, category.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite_bind_int(stmt, binder++ , priority);
+    sqlite3_bind_int(stmt, binder++ , priority);
 
-    rc = sqlite_step(stmt);
+    rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
     if(rc != SQLITE_DONE)

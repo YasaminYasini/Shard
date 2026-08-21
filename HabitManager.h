@@ -22,12 +22,12 @@ struct Habit {
 
     Habit()
         : id(0),
-          priority(3),
+          priority(0),
           active(1),
           streak(0),
           bestStreak(0),
           totalDone(0),
-          strength(0.5) {}
+          strength(0) {}
 
     bool operator==(const Habit& other) const {
         return id == other.id &&
@@ -101,7 +101,7 @@ public:
     // ===== Habit Table Functions =====
     bool addHabit(const std::string& name, const std::string& category = "General", int priority = 3);
     bool deleteHabit(int habitID);
-    bool updateHabit(int habitID, int priority, const std::string& name = "", const std::string& category = "");
+    bool updateHabit(int habitID, const std::string& name = "", const std::string& category = "", int priority=-1);
     Habit getHabit(int habitID);
     bool habitExists(int habitID);
     std::vector<Habit> getAllHabits();

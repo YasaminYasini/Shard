@@ -22,7 +22,7 @@ HabitManager::HabitManager(const std::string& dbPath)
     const char* createHabitSQL = 
     R"(
     CREATE TABLE IF NOT EXISTS Habit (
-    HabitID     INTEGER PRIMARY KEY CHECK( HabitID >= 1),
+    HabitID     INTEGER PRIMARY KEY AUTOINCREMENT,
     Name        TEXT NOT NULL,
     Category    TEXT DEFAULT 'General',
     Priority    INTEGER DEFAULT 3 CHECK( Priority >= 1 AND Priority <= 5 ),
@@ -149,9 +149,9 @@ bool HabitManager::deleteHabit(int habitID)
 
 bool HabitManager::updateHabit(
     int habitID, 
-    int priority,
     const std::string& name, 
-    const std::string& category
+    const std::string& category,
+    int priority
     )
 {
     if (!Database::DBCheck(db)) return false;
@@ -163,7 +163,7 @@ bool HabitManager::updateHabit(
 
     if (!name.empty()) updates.push_back("Name = ?");
     if (!category.empty()) updates.push_back("Category = ?");
-    if (priority != -1) updates.push_back("Priority = ?");
+    if (priority != -1 && priority < 5 && priority > 1) updates.push_back("Priority = ?");
 
     if (updates.empty())
     {
@@ -189,7 +189,7 @@ bool HabitManager::updateHabit(
     int bindIndex = 1;
     if (!name.empty()) sqlite3_bind_text(stmt, bindIndex++, name.c_str(), -1, SQLITE_TRANSIENT);
     if (!category.empty()) sqlite3_bind_text(stmt, bindIndex++, category.c_str(), -1, SQLITE_TRANSIENT);
-    if (priority != -1) sqlite3_bind_int(stmt, bindIndex++, priority);
+    if (priority != -1 && priority < 5 && priority >1) sqlite3_bind_int(stmt, bindIndex++, priority);
 
     sqlite3_bind_int(stmt, bindIndex, habitID);
 

@@ -94,6 +94,7 @@ TEST_F(HabitManagerTest, EmptyName)
     EXPECT_FALSE(result); 
 }
 
+
 // ===== Get Habit =====
 TEST_F(HabitManagerTest, GetExistingHabit) 
 {
@@ -344,3 +345,244 @@ TEST_F(HabitManagerTest, UpdateToInvalidFalse)
     EXPECT_EQ(modified.category, habit.category);
     EXPECT_EQ(modified.priority, habit.priority);
 }
+
+
+// ===== Habit Exists ======
+TEST_F(HabitManagerTest, HabitExistsTrue)
+{
+    bool insert = manager->addHabit("Habit");
+    ASSERT_TRUE(insert);
+    
+    EXPECT_TRUE(manager->habitExists(1));  
+}
+
+TEST_F(HabitManagerTest, HabitExistsFalse)
+{
+    EXPECT_FALSE(manager->habitExists(999));
+}
+
+TEST_F(HabitManagerTest, InvalidHabitExists)
+{
+    EXPECT_FALSE(manager->habitExists(0));
+    EXPECT_FALSE(manager->habitExists(-1));
+}
+
+TEST_F(HabitManagerTest, HabitExistsAfterDeletion)
+{
+    manager->addHabit("Habit");
+    ASSERT_TRUE(manager->habitExists(1));
+    
+    manager->deleteHabit(1);
+    EXPECT_FALSE(manager->habitExists(1));
+}
+
+
+// ===== Get All Habits =====
+TEST_F(HabitManagerTest, GetAllHabitsMultipleEntries)
+{
+    bool insert1 = manager->addHabit("HabitA", "Health", 5);
+    bool insert2 = manager->addHabit("HabitB", "Work", 2);
+    ASSERT_TRUE(insert1 && insert2);
+
+    auto habits = manager->getAllHabits();
+    ASSERT_EQ(habits.size(), 2);  
+
+    EXPECT_EQ(habits[0].name, "HabitA");
+    EXPECT_EQ(habits[0].category, "Health");
+    EXPECT_EQ(habits[0].priority, 5);
+    EXPECT_EQ(habits[1].name, "HabitB");
+    EXPECT_EQ(habits[1].category, "Work");
+    EXPECT_EQ(habits[1].priority, 2);
+}
+
+TEST_F(HabitManagerTest, GetAllHabitsEmpty)
+{
+    auto habits = manager->getAllHabits();
+    ASSERT_EQ(habits.size(), 0);
+}
+
+TEST_F(HabitManagerTest, GetAllHabitsAfterDelete)
+{
+    bool insert1 = manager->addHabit("HabitA", "Health", 5);
+    bool insert2 = manager->addHabit("HabitB", "Work", 2);
+    bool delete1 = manager->deleteHabit(1);
+
+    ASSERT_TRUE(insert1 && insert2 && delete1);
+
+    auto habits = manager->getAllHabits();
+    ASSERT_EQ(habits.size(), 1);  
+
+    EXPECT_EQ(habits[0].id, 2);
+    EXPECT_EQ(habits[0].name, "HabitB");
+    EXPECT_EQ(habits[0].category, "Work");
+    EXPECT_EQ(habits[0].priority, 2);
+}
+
+
+// ===== Archive / Unarchive Habit =====
+TEST_F(HabitManagerTest, ArchiveExistingHabit)
+{
+    bool inserted = manager->addHabit("HabitToArchive", "Health", 3);
+    ASSERT_TRUE(inserted);
+
+    bool archived = manager->archiveHabit(1, true);
+    EXPECT_TRUE(archived);
+
+    Habit habit = manager->getHabit(1);
+    EXPECT_EQ(habit.id, 1);
+    EXPECT_EQ(habit.name, "HabitToArchive");
+    EXPECT_EQ(habit.active, 0); 
+
+    auto active = manager->getActiveHabits();
+    EXPECT_TRUE(active.empty());
+}
+
+TEST_F(HabitManagerTest, UnarchiveArchivedHabit)
+{
+    manager->addHabit("ArchivedHabit");
+    bool archived = manager->archiveHabit(1, true);
+    ASSERT_TRUE(archived);
+
+    Habit habit = manager->getHabit(1);
+    ASSERT_EQ(habit.active, 0);
+
+    bool unarchived = manager->archiveHabit(1, false);
+    EXPECT_TRUE(unarchived);
+
+    habit = manager->getHabit(1);
+    EXPECT_EQ(habit.active, 1);
+
+    auto active = manager->getActiveHabits();
+    ASSERT_EQ(active.size(), 1);
+    EXPECT_EQ(active[0].id, 1);
+    EXPECT_EQ(active[0].name, "ArchivedHabit");
+}
+
+TEST_F(HabitManagerTest, ArchiveNonExistentHabit)
+{
+    bool archived = manager->archiveHabit(999, true);
+    EXPECT_FALSE(archived);
+
+    bool unarchived = manager->archiveHabit(999, false);
+    EXPECT_FALSE(unarchived);
+
+    auto all = manager->getAllHabits();
+    EXPECT_TRUE(all.empty());
+}
+
+TEST_F(HabitManagerTest, ArchiveInvalidId)
+{
+    EXPECT_FALSE(manager->archiveHabit(0, true));
+    EXPECT_FALSE(manager->archiveHabit(-5, true));
+    EXPECT_FALSE(manager->archiveHabit(0, false));
+    EXPECT_FALSE(manager->archiveHabit(-5, false));
+}
+
+TEST_F(HabitManagerTest, ArchiveAlreadyArchivedHabit)
+{
+    manager->addHabit("AlreadyArchived");
+    manager->archiveHabit(1, true);
+
+    bool archivedAgain = manager->archiveHabit(1, true);
+    EXPECT_TRUE(archivedAgain); 
+
+    Habit habit = manager->getHabit(1);
+    EXPECT_EQ(habit.active, 0);
+}
+
+TEST_F(HabitManagerTest, UnarchiveAlreadyActiveHabit)
+{
+    manager->addHabit("AlreadyActive");
+
+    bool unarchived = manager->archiveHabit(1, false);
+    EXPECT_TRUE(unarchived);
+
+    Habit habit = manager->getHabit(1);
+    EXPECT_EQ(habit.active, 1);
+}
+
+
+// ===== Get Active / Archived Habits =====
+
+TEST_F(HabitManagerTest, GetActiveHabitsDefaultReturnsOnlyActive)
+{
+    manager->addHabit("ActiveHabit", "Health", 3);
+    manager->addHabit("ArchivedHabit", "Work", 2);
+    
+    bool archived = manager->archiveHabit(2, true);
+    ASSERT_TRUE(archived);
+
+    auto active = manager->getActiveHabits();
+    
+    ASSERT_EQ(active.size(), 1);
+    EXPECT_EQ(active[0].id, 1);
+    EXPECT_EQ(active[0].name, "ActiveHabit");
+    EXPECT_EQ(active[0].active, 1);
+}
+
+TEST_F(HabitManagerTest, GetActiveHabitsWithFalseReturnsOnlyArchived)
+{
+    manager->addHabit("ActiveHabit", "Health", 3);
+    manager->addHabit("ArchivedHabit", "Work", 2);
+    
+    manager->archiveHabit(2, true);
+
+    auto archived = manager->getActiveHabits(false);
+    
+    ASSERT_EQ(archived.size(), 1);
+    EXPECT_EQ(archived[0].id, 2);
+    EXPECT_EQ(archived[0].name, "ArchivedHabit");
+    EXPECT_EQ(archived[0].active, 0);
+}
+
+TEST_F(HabitManagerTest, GetActiveHabitsUnarchive)
+{
+    manager->addHabit("HabitA");
+    manager->addHabit("HabitB");
+    
+    manager->archiveHabit(1, true);
+    
+    auto active = manager->getActiveHabits();
+    ASSERT_EQ(active.size(), 1);
+    EXPECT_EQ(active[0].id, 2);
+    
+    manager->archiveHabit(1, false);
+    
+    active = manager->getActiveHabits();
+    ASSERT_EQ(active.size(), 2);
+
+    EXPECT_EQ(active[0].id, 1);
+    EXPECT_EQ(active[0].name, "HabitA");
+    EXPECT_EQ(active[1].id, 2);
+    EXPECT_EQ(active[1].name, "HabitB");
+}
+
+TEST_F(HabitManagerTest, GetActiveHabitsEmpty)
+{
+    auto active = manager->getActiveHabits();
+    ASSERT_TRUE(active.empty());
+    EXPECT_EQ(active.size(), 0);
+    
+    auto archived = manager->getActiveHabits(false);
+    ASSERT_TRUE(archived.empty());
+    EXPECT_EQ(archived.size(), 0);
+}
+
+TEST_F(HabitManagerTest, GetActiveHabitsAllArchived)
+{
+    manager->addHabit("Temp1");
+    manager->addHabit("Temp2");
+    
+    manager->archiveHabit(1, true);
+    manager->archiveHabit(2, true);
+    
+    auto active = manager->getActiveHabits();
+    EXPECT_TRUE(active.empty());
+    
+    auto archived = manager->getActiveHabits(false);
+    ASSERT_EQ(archived.size(), 2);
+    EXPECT_EQ(archived[0].id, 1);
+    EXPECT_EQ(archived[1].id, 2);
+}
+
+

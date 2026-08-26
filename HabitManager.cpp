@@ -1,5 +1,4 @@
 # include "HabitManager.h"
-//# include "HabitConf.h"
 # include "Database.h"
 # include <iostream>
 # include <sqlite3.h>
@@ -43,12 +42,43 @@ HabitManager::HabitManager(const std::string& dbPath)
     HabitID     INTEGER,
     DoneDate    TEXT DEFAULT (date('now')),
     Count       INTEGER DEFAULT 1,            -- For habits that can be done multiple times/day
-    FOREIGN KEY (HabitID) REFERENCES Habit(HabitID) ON DELETE CASCADE
+    FOREIGN KEY (HabitID) REFERENCES Habit(HabitID) ON DELETE CASCADE,
+    UNIQUE(HabitID, DoneDate)
     );
+    )";
+
+
+    const char* streakTrigger = 
+    R"(
+    CREATE TRIGGER IF NOT EXISTS update_habit_on_completion
+    AFTER INSERT OR UPDATE ON HabitHistory
+    FOR EACH ROW
+    BEGIN
+        UPDATE Habit
+        SET 
+            LastDone = date('now'),
+            Streak = CASE
+                WHEN date('now') = date(LastDone, '+1 day') THEN Streak + 1
+                WHEN date('now') = date(LastDone) THEN Streak
+                ELSE 1
+            END,
+            TotalDone = (SELECT SUM(Count) FROM HabitHistory WHERE HabitID = NEW.HabitID)
+            Strength = CASE
+                WHEN date('now') = date(LastDone, '+1 day') THEN MIN(Strength + 0.1, 1.0)
+                WHEN date('now') = date(LastDone) THEN Strength
+                ELSE MAX(Strength - 0.05, 0.0)
+            END
+        WHERE HabitID = NEW.HabitID;
+
+        UPDATE Habit
+        SET BestStreak = MAX(Streak, BestStreak)
+        WHERE HabitID = NEW.HabitID;
+    END;
     )";
 
     Database::executeSQL(db, createHabitSQL);
     Database::executeSQL(db, createHabitHistorySQL);
+    Database::executeSQL(db, streakTrigger);
 }
 
 
@@ -451,7 +481,6 @@ int HabitManager::getIntColumn(int habitID, const std::string& columnName)
     sqlite3_finalize(stmt);
     return result;
 }
-
 
 int HabitManager::getCurrentStreak(int habitID) 
 {

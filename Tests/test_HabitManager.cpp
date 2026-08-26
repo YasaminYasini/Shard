@@ -585,4 +585,49 @@ TEST_F(HabitManagerTest, GetActiveHabitsAllArchived)
     EXPECT_EQ(archived[1].id, 2);
 }
 
+//TODO: test streak functions
+// ===== Test getIntColumn =====
+TEST_F(HabitManagerTest, GetIntColumnExistingHabit)
+{
+    manager->addHabit("TestHabit", "Health", 4);
+    
+    EXPECT_EQ(manager->getIntColumn(1, "Priority"), 4);
+    EXPECT_EQ(manager->getIntColumn(1, "Streak"), 0);
+    EXPECT_EQ(manager->getIntColumn(1, "BestStreak"), 0);
+    EXPECT_EQ(manager->getIntColumn(1, "TotalDone"), 0);
+    EXPECT_EQ(manager->getIntColumn(1, "Active"), 1);
+}
 
+TEST_F(HabitManagerTest, GetIntColumnNonExistentHabit)
+{
+    EXPECT_EQ(manager->getIntColumn(999, "Priority"), -1);
+    EXPECT_EQ(manager->getIntColumn(999, "Streak"), -1);
+}
+
+TEST_F(HabitManagerTest, GetIntColumnInvalidColumn)
+{
+    manager->addHabit("TestHabit");
+    EXPECT_EQ(manager->getIntColumn(1, "InvalidColumn"), -1);
+}
+
+TEST_F(HabitManagerTest, GetIntColumnInvalidId)
+{
+    EXPECT_EQ(manager->getIntColumn(0, "Priority"), -1);
+    EXPECT_EQ(manager->getIntColumn(-5, "Priority"), -1);
+}
+
+TEST_F(HabitManagerTest, GetIntColumnAfterUpdate)
+{
+    manager->addHabit("TestHabit", "Health", 3);
+    
+    EXPECT_EQ(manager->getIntColumn(1, "Priority"), 3);
+    EXPECT_EQ(manager->getIntColumn(1, "Streak"), 0);
+    EXPECT_EQ(manager->getIntColumn(1, "BestStreak"), 0);
+    EXPECT_EQ(manager->getIntColumn(1, "TotalDone"), 0);
+    
+    manager->updateHabit(1, "", "", 5);
+    EXPECT_EQ(manager->getIntColumn(1, "Priority"), 5);
+    
+    manager->updateHabit(1, "NewName", "", -1);
+    EXPECT_EQ(manager->getIntColumn(1, "Priority"), 5);
+}

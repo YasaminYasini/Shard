@@ -111,7 +111,7 @@ public:
 
 
     // ===== HabitHistory Table Functions =====
-    bool completeHabit(int habitID);
+    bool completeHabit(int habitID,  const std::string& completionDate = "date(now)");
     std::vector<HabitHistoryEntry> getHabitHistory(int habitID, int days = 365);
     int getSuccessRate(int habitID, int days = 30);
     HabitCalendarData getHabitCalendar(int habitID);

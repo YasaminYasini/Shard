@@ -31,8 +31,7 @@ HabitManager::HabitManager(const std::string& dbPath)
     Streak      INTEGER DEFAULT 0,
     BestStreak  INTEGER DEFAULT 0,
     TotalDone   INTEGER DEFAULT 0,
-    Strength    REAL DEFAULT 0.5             
-    );
+    Strength    REAL DEFAULT 0);
     )";
 
     const char* createHabitHistorySQL = 
@@ -41,44 +40,299 @@ HabitManager::HabitManager(const std::string& dbPath)
     HistoryID   INTEGER PRIMARY KEY,
     HabitID     INTEGER,
     DoneDate    TEXT DEFAULT (date('now')),
-    Count       INTEGER DEFAULT 1,            -- For habits that can be done multiple times/day
+    Count       INTEGER DEFAULT 1,
     FOREIGN KEY (HabitID) REFERENCES Habit(HabitID) ON DELETE CASCADE,
-    UNIQUE(HabitID, DoneDate)
-    );
+    UNIQUE(HabitID, DoneDate));
     )";
 
 
-    const char* streakTrigger = 
+    const char* insertTrigger =
     R"(
-    CREATE TRIGGER IF NOT EXISTS update_habit_on_completion
-    AFTER INSERT OR UPDATE ON HabitHistory
+    CREATE TRIGGER IF NOT EXISTS update_habit_after_insert
+    AFTER INSERT ON HabitHistory
     FOR EACH ROW
     BEGIN
-        UPDATE Habit
-        SET 
-            LastDone = date('now'),
-            Streak = CASE
-                WHEN date('now') = date(LastDone, '+1 day') THEN Streak + 1
-                WHEN date('now') = date(LastDone) THEN Streak
-                ELSE 1
-            END,
-            TotalDone = (SELECT SUM(Count) FROM HabitHistory WHERE HabitID = NEW.HabitID)
-            Strength = CASE
-                WHEN date('now') = date(LastDone, '+1 day') THEN MIN(Strength + 0.1, 1.0)
-                WHEN date('now') = date(LastDone) THEN Strength
-                ELSE MAX(Strength - 0.05, 0.0)
-            END
-        WHERE HabitID = NEW.HabitID;
 
         UPDATE Habit
-        SET BestStreak = MAX(Streak, BestStreak)
+        SET
+            LastDone = (
+                SELECT MAX(DoneDate)
+                FROM HabitHistory
+                WHERE HabitID = NEW.HabitID
+            ),
+
+            TotalDone = (
+                SELECT COALESCE(SUM(Count), 0)
+                FROM HabitHistory
+                WHERE HabitID = NEW.HabitID
+            ),
+
+            Streak = (
+                SELECT COALESCE(MAX(group_count), 0)
+                FROM (
+                    SELECT
+                        COUNT(*) AS group_count,
+                        MAX(DoneDate) AS group_last_date
+                    FROM (
+                        SELECT
+                            DoneDate,
+                            date(
+                                DoneDate,
+                                '-' || ROW_NUMBER() OVER (
+                                    ORDER BY DoneDate
+                                ) || ' days'
+                            ) AS streak_group
+                        FROM HabitHistory
+                        WHERE HabitID = NEW.HabitID
+                    )
+                    GROUP BY streak_group
+                )
+                WHERE group_last_date = (
+                    SELECT MAX(DoneDate)
+                    FROM HabitHistory
+                    WHERE HabitID = NEW.HabitID
+                )
+            ),
+
+            BestStreak = (
+                SELECT COALESCE(MAX(group_count), 0)
+                FROM (
+                    SELECT COUNT(*) AS group_count
+                    FROM (
+                        SELECT
+                            DoneDate,
+                            date(
+                                DoneDate,
+                                '-' || ROW_NUMBER() OVER (
+                                    ORDER BY DoneDate
+                                ) || ' days'
+                            ) AS streak_group
+                        FROM HabitHistory
+                        WHERE HabitID = NEW.HabitID
+                    )
+                    GROUP BY streak_group
+                )
+            )
+
         WHERE HabitID = NEW.HabitID;
+
     END;
     )";
 
+    const char* updateTrigger =
+    R"(
+    CREATE TRIGGER IF NOT EXISTS update_habit_after_update
+    AFTER UPDATE ON HabitHistory
+    FOR EACH ROW
+    BEGIN
+        UPDATE Habit
+        SET
+            LastDone = (
+                SELECT MAX(DoneDate)
+                FROM HabitHistory
+                WHERE HabitID = OLD.HabitID
+            ),
+
+            TotalDone = (
+                SELECT COALESCE(SUM(Count), 0)
+                FROM HabitHistory
+                WHERE HabitID = OLD.HabitID
+            ),
+
+            Streak = (
+                SELECT COALESCE(MAX(group_count), 0)
+                FROM (
+                    SELECT
+                        COUNT(*) AS group_count,
+                        MAX(DoneDate) AS group_last_date
+                    FROM (
+                        SELECT
+                            DoneDate,
+                            date(
+                                DoneDate,
+                                '-' || ROW_NUMBER() OVER (
+                                    ORDER BY DoneDate
+                                ) || ' days'
+                            ) AS streak_group
+                        FROM HabitHistory
+                        WHERE HabitID = OLD.HabitID
+                    )
+                    GROUP BY streak_group
+                )
+                WHERE group_last_date = (
+                    SELECT MAX(DoneDate)
+                    FROM HabitHistory
+                    WHERE HabitID = OLD.HabitID
+                )
+            ),
+
+            BestStreak = (
+                SELECT COALESCE(MAX(group_count), 0)
+                FROM (
+                    SELECT COUNT(*) AS group_count
+                    FROM (
+                        SELECT
+                            DoneDate,
+                            date(
+                                DoneDate,
+                                '-' || ROW_NUMBER() OVER (
+                                    ORDER BY DoneDate
+                                ) || ' days'
+                            ) AS streak_group
+                        FROM HabitHistory
+                        WHERE HabitID = OLD.HabitID
+                    )
+                    GROUP BY streak_group
+                )
+            )
+
+        WHERE HabitID = OLD.HabitID;
+
+        UPDATE Habit
+        SET
+            LastDone = (
+                SELECT MAX(DoneDate)
+                FROM HabitHistory
+                WHERE HabitID = NEW.HabitID
+            ),
+
+            TotalDone = (
+                SELECT COALESCE(SUM(Count), 0)
+                FROM HabitHistory
+                WHERE HabitID = NEW.HabitID
+            ),
+
+            Streak = (
+                SELECT COALESCE(MAX(group_count), 0)
+                FROM (
+                    SELECT
+                        COUNT(*) AS group_count,
+                        MAX(DoneDate) AS group_last_date
+                    FROM (
+                        SELECT
+                            DoneDate,
+                            date(
+                                DoneDate,
+                                '-' || ROW_NUMBER() OVER (
+                                    ORDER BY DoneDate
+                                ) || ' days'
+                            ) AS streak_group
+                        FROM HabitHistory
+                        WHERE HabitID = NEW.HabitID
+                    )
+                    GROUP BY streak_group
+                )
+                WHERE group_last_date = (
+                    SELECT MAX(DoneDate)
+                    FROM HabitHistory
+                    WHERE HabitID = NEW.HabitID
+                )
+            ),
+
+            BestStreak = (
+                SELECT COALESCE(MAX(group_count), 0)
+                FROM (
+                    SELECT COUNT(*) AS group_count
+                    FROM (
+                        SELECT
+                            DoneDate,
+                            date(
+                                DoneDate,
+                                '-' || ROW_NUMBER() OVER (
+                                    ORDER BY DoneDate
+                                ) || ' days'
+                            ) AS streak_group
+                        FROM HabitHistory
+                        WHERE HabitID = NEW.HabitID
+                    )
+                    GROUP BY streak_group
+                )
+            )
+
+        WHERE HabitID = NEW.HabitID;
+
+    END;
+    )";
+
+    const char* deleteTrigger =
+    R"(
+    CREATE TRIGGER IF NOT EXISTS update_habit_after_delete
+    AFTER DELETE ON HabitHistory
+    FOR EACH ROW
+    BEGIN
+
+        UPDATE Habit
+        SET
+            LastDone = (
+                SELECT MAX(DoneDate)
+                FROM HabitHistory
+                WHERE HabitID = OLD.HabitID
+            ),
+
+            TotalDone = (
+                SELECT COALESCE(SUM(Count), 0)
+                FROM HabitHistory
+                WHERE HabitID = OLD.HabitID
+            ),
+
+            Streak = (
+                SELECT COALESCE(MAX(group_count), 0)
+                FROM (
+                    SELECT
+                        COUNT(*) AS group_count,
+                        MAX(DoneDate) AS group_last_date
+                    FROM (
+                        SELECT
+                            DoneDate,
+                            date(
+                                DoneDate,
+                                '-' || ROW_NUMBER() OVER (
+                                    ORDER BY DoneDate
+                                ) || ' days'
+                            ) AS streak_group
+                        FROM HabitHistory
+                        WHERE HabitID = OLD.HabitID
+                    )
+                    GROUP BY streak_group
+                )
+                WHERE group_last_date = (
+                    SELECT MAX(DoneDate)
+                    FROM HabitHistory
+                    WHERE HabitID = OLD.HabitID
+                )
+            ),
+
+            BestStreak = (
+                SELECT COALESCE(MAX(group_count), 0)
+                FROM (
+                    SELECT COUNT(*) AS group_count
+                    FROM (
+                        SELECT
+                            DoneDate,
+                            date(
+                                DoneDate,
+                                '-' || ROW_NUMBER() OVER (
+                                    ORDER BY DoneDate
+                                ) || ' days'
+                            ) AS streak_group
+                        FROM HabitHistory
+                        WHERE HabitID = OLD.HabitID
+                    )
+                    GROUP BY streak_group
+                )
+            )
+
+        WHERE HabitID = OLD.HabitID;
+
+    END;
+    )";
+
+
     Database::executeSQL(db, createHabitSQL);
     Database::executeSQL(db, createHabitHistorySQL);
-    Database::executeSQL(db, streakTrigger);
+    Database::executeSQL(db, insertTrigger);
+    Database::executeSQL(db, updateTrigger);
+    Database::executeSQL(db, deleteTrigger);
 }
 
 
@@ -193,7 +447,7 @@ bool HabitManager::updateHabit(
 
     if (!name.empty()) updates.push_back("Name = ?");
     if (!category.empty()) updates.push_back("Category = ?");
-    if (priority != -1 && priority < 5 && priority > 1) updates.push_back("Priority = ?");
+    if (priority != -1 && priority <= 5 && priority >= 1) updates.push_back("Priority = ?");
 
     if (updates.empty())
     {
@@ -219,7 +473,7 @@ bool HabitManager::updateHabit(
     int bindIndex = 1;
     if (!name.empty()) sqlite3_bind_text(stmt, bindIndex++, name.c_str(), -1, SQLITE_TRANSIENT);
     if (!category.empty()) sqlite3_bind_text(stmt, bindIndex++, category.c_str(), -1, SQLITE_TRANSIENT);
-    if (priority != -1 && priority < 5 && priority >1) sqlite3_bind_int(stmt, bindIndex++, priority);
+    if (priority != -1 && priority <= 5 && priority >= 1) sqlite3_bind_int(stmt, bindIndex++, priority);
 
     sqlite3_bind_int(stmt, bindIndex, habitID);
 
@@ -326,9 +580,7 @@ std::vector<Habit> HabitManager::getAllHabits()
         return habits;
     }
 
-    rc = sqlite3_step(stmt);
-
-    while (rc == SQLITE_ROW) 
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) 
     {
         Habit habit;
         habit.id = sqlite3_column_int(stmt, 0);
@@ -375,9 +627,9 @@ std::vector<Habit> HabitManager::getActiveHabits(bool active)
         return habits;
     }
 
-    rc = sqlite3_step(stmt);
+    
 
-    while (rc == SQLITE_ROW) 
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) 
     {
         Habit habit;
         habit.id = sqlite3_column_int(stmt, 0);
@@ -450,6 +702,47 @@ bool HabitManager::archiveHabit(int habitID, bool archive)
 
     return true;
 }
+
+// ===== HabitHistory Table Functions =====
+bool HabitManager::completeHabit(int habitID,  const std::string& completionDate)
+{
+    if (!Database::DBCheck(db)) return false;
+    if (!habitExists(habitID)) return false;
+
+    if (getIntColumn(habitID, "Active") == 0) 
+    {
+        std::cerr << "Habit ID " << habitID << " is archived. Unarchive first to complete it." << std::endl;
+        return false;
+    }
+
+    std::string date = completionDate.empty() ? "date('now')" : "'" + completionDate + "'";
+
+    sqlite3_stmt* stmt;
+    std::string sql = "INSERT INTO HabitHistory (HabitID, DoneDate, Count) "
+                      "VALUES (?, " + date + ", 1) "
+                      "ON CONFLICT(HabitID, DoneDate) DO UPDATE SET Count = Count + 1;";
+
+    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) 
+    {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return false;
+    }
+
+    sqlite3_bind_int(stmt, 1, habitID);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE)
+    {
+        std::cerr << "Failed to log completion for habit " << habitID << ": " << sqlite3_errmsg(db) << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+
 
 // ===== Streak Functions =====
 int HabitManager::getIntColumn(int habitID, const std::string& columnName)

@@ -112,7 +112,7 @@ TEST_F(HabitManagerTest, GetExistingHabit)
     EXPECT_EQ(habit.streak, 0);
     EXPECT_EQ(habit.bestStreak, 0);
     EXPECT_EQ(habit.totalDone, 0);
-    EXPECT_DOUBLE_EQ(habit.strength, 0.5);
+    EXPECT_DOUBLE_EQ(habit.strength, 0);
 }
 
 TEST_F(HabitManagerTest, GetDefaultValues) 
@@ -630,4 +630,103 @@ TEST_F(HabitManagerTest, GetIntColumnAfterUpdate)
     
     manager->updateHabit(1, "NewName", "", -1);
     EXPECT_EQ(manager->getIntColumn(1, "Priority"), 5);
+}
+
+
+// ===== Habit Completion =====
+TEST_F(HabitManagerTest, completeExistingHabitInsert)
+{
+    manager->addHabit("TestHabit", "Health", 3);
+    
+    bool completed = manager->completeHabit(1);
+    EXPECT_TRUE(completed);
+    
+    EXPECT_EQ(manager->getIntColumn(1, "Streak"), 1);
+    EXPECT_EQ(manager->getIntColumn(1, "BestStreak"), 1);
+    EXPECT_EQ(manager->getIntColumn(1, "TotalDone"), 1);
+}
+
+TEST_F(HabitManagerTest, completeExistingHabitUpdate)
+{
+    manager->addHabit("TestHabit");
+    
+    manager->completeHabit(1);
+    bool completed = manager->completeHabit(1);
+    EXPECT_TRUE(completed);
+    
+    EXPECT_EQ(manager->getIntColumn(1, "Streak"), 1);
+    EXPECT_EQ(manager->getIntColumn(1, "BestStreak"), 1);
+    EXPECT_EQ(manager->getIntColumn(1, "TotalDone"), 2);
+}
+
+TEST_F(HabitManagerTest, completeNonExistentHabit)
+{
+    bool completed = manager->completeHabit(999);
+    EXPECT_FALSE(completed);
+}
+
+TEST_F(HabitManagerTest, completeInvalidHabit)
+{
+    EXPECT_FALSE(manager->completeHabit(0));
+    EXPECT_FALSE(manager->completeHabit(-5));
+}
+
+TEST_F(HabitManagerTest, completeHabitConsecutiveDays)
+{
+    manager->addHabit("TestHabit");
+
+    manager->completeHabit(1, "2026-01-01");
+    EXPECT_EQ(manager->getIntColumn(1, "Streak"), 1);
+    EXPECT_EQ(manager->getIntColumn(1, "BestStreak"), 1);
+    EXPECT_EQ(manager->getIntColumn(1, "TotalDone"), 1);
+
+    manager->completeHabit(1, "2026-01-02");
+    EXPECT_EQ(manager->getIntColumn(1, "Streak"), 2);
+    EXPECT_EQ(manager->getIntColumn(1, "BestStreak"), 2);
+    EXPECT_EQ(manager->getIntColumn(1, "TotalDone"), 2);
+
+    manager->completeHabit(1, "2026-01-03");
+    manager->completeHabit(1, "2026-01-03"); 
+    EXPECT_EQ(manager->getIntColumn(1, "Streak"), 3);
+    EXPECT_EQ(manager->getIntColumn(1, "BestStreak"), 3);
+    EXPECT_EQ(manager->getIntColumn(1, "TotalDone"), 4); 
+}
+
+TEST_F(HabitManagerTest, completeHabitAfterGapResetsStreak)
+{
+    manager->addHabit("TestHabit");
+
+    manager->completeHabit(1, "2026-01-01");
+    manager->completeHabit(1, "2026-01-02");
+    EXPECT_EQ(manager->getIntColumn(1, "Streak"), 2);
+
+    manager->completeHabit(1, "2026-01-04");
+    EXPECT_EQ(manager->getIntColumn(1, "Streak"), 1); 
+    EXPECT_EQ(manager->getIntColumn(1, "BestStreak"), 2);
+}
+
+TEST_F(HabitManagerTest, completeArchivedHabit)
+{
+    manager->addHabit("ArchivedHabit");
+    manager->archiveHabit(1, true);
+    
+    bool completed = manager->completeHabit(1);
+    EXPECT_FALSE(completed);
+    
+    EXPECT_EQ(manager->getIntColumn(1, "TotalDone"), 0);
+    EXPECT_EQ(manager->getIntColumn(1, "Active"), 0);
+}
+
+TEST_F(HabitManagerTest, unarchiveThenComplete)
+{
+    manager->addHabit("Habit");
+    manager->archiveHabit(1, true);
+    
+    manager->archiveHabit(1, false);
+    EXPECT_EQ(manager->getIntColumn(1, "Active"), 1);
+    
+    bool completed = manager->completeHabit(1);
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(manager->getIntColumn(1, "TotalDone"), 1);
+    EXPECT_EQ(manager->getIntColumn(1, "Streak"), 1);
 }

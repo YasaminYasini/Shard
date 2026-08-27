@@ -730,3 +730,244 @@ TEST_F(HabitManagerTest, unarchiveThenComplete)
     EXPECT_EQ(manager->getIntColumn(1, "TotalDone"), 1);
     EXPECT_EQ(manager->getIntColumn(1, "Streak"), 1);
 }
+
+// ===== Get Habit History =====
+TEST_F(HabitManagerTest, GetHabitHistoryExistingEmpty)
+{
+    manager->addHabit("TestHabit");
+    
+    auto history = manager->getHabitHistory(1, 365);
+    EXPECT_TRUE(history.empty());
+    EXPECT_EQ(history.size(), 0);
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryExistingNonEmpty)
+{
+    manager->addHabit("TestHabit");
+    
+    manager->completeHabit(1, "2026-08-25");
+    manager->completeHabit(1, "2026-08-26");
+    manager->completeHabit(1, "2026-08-27");
+    
+    auto history = manager->getHabitHistory(1, 365);
+    ASSERT_EQ(history.size(), 3);
+    
+    EXPECT_EQ(history[0].doneDate, "2026-08-27");
+    EXPECT_EQ(history[0].count, 1);
+    EXPECT_EQ(history[1].doneDate, "2026-08-26");
+    EXPECT_EQ(history[1].count, 1);
+    EXPECT_EQ(history[2].doneDate, "2026-08-25");
+    EXPECT_EQ(history[2].count, 1);
+    
+    for (const auto& entry : history) {
+        EXPECT_EQ(entry.habitId, 1);
+    }
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryExistingWithMultipleCompletionsSameDay)
+{
+    manager->addHabit("TestHabit");
+    
+    manager->completeHabit(1, "2026-08-27");
+    manager->completeHabit(1, "2026-08-27");
+    manager->completeHabit(1, "2026-08-27");
+    
+    auto history = manager->getHabitHistory(1, 365);
+    ASSERT_EQ(history.size(), 1);
+    EXPECT_EQ(history[0].doneDate, "2026-08-27");
+    EXPECT_EQ(history[0].count, 3);
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryExistingLimitedDays)
+{
+    manager->addHabit("TestHabit");
+    
+    manager->completeHabit(1, "2026-07-01");
+    manager->completeHabit(1, "2026-08-01");
+    manager->completeHabit(1, "2026-08-27");
+    
+    auto history = manager->getHabitHistory(1, 30);
+    ASSERT_EQ(history.size(), 2);
+    EXPECT_EQ(history[0].doneDate, "2026-08-27");
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryNonExistent)
+{
+    auto history = manager->getHabitHistory(999, 365);
+    EXPECT_TRUE(history.empty());
+    EXPECT_EQ(history.size(), 0);
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryInvalid)
+{
+    auto history1 = manager->getHabitHistory(0, 365);
+    EXPECT_TRUE(history1.empty());
+    
+    auto history2 = manager->getHabitHistory(-5, 365);
+    EXPECT_TRUE(history2.empty());
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryInvalidDays)
+{
+    manager->addHabit("TestHabit");
+    
+    manager->completeHabit(1, "2026-08-27");
+    manager->completeHabit(1, "2026-08-26");
+    
+    auto history0 = manager->getHabitHistory(1, 0);
+    ASSERT_EQ(history0.size(), 1);
+    EXPECT_EQ(history0[0].doneDate, "2026-08-27");
+    
+    auto historyNegative = manager->getHabitHistory(1, -5);
+    ASSERT_EQ(historyNegative.size(), 1);
+    EXPECT_EQ(historyNegative[0].doneDate, "2026-08-27");
+    
+    auto historyHuge = manager->getHabitHistory(1, 99999);
+    ASSERT_EQ(historyHuge.size(), 2);
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryDeleted)
+{
+    manager->addHabit("TestHabit");
+    
+    manager->completeHabit(1, "2026-08-27");
+    EXPECT_EQ(manager->getHabitHistory(1, 365).size(), 1);
+    
+    bool deleted = manager->deleteHabit(1);
+    ASSERT_TRUE(deleted);
+    
+    auto history = manager->getHabitHistory(1, 365);
+    EXPECT_TRUE(history.empty());
+    
+    sqlite3_stmt* stmt;
+    const char* sql = "SELECT COUNT(*) FROM HabitHistory WHERE HabitID = 1;";
+    sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    ASSERT_EQ(sqlite3_step(stmt), SQLITE_ROW);
+
+    int count = sqlite3_column_int(stmt, 0);
+    EXPECT_EQ(count, 0);
+    sqlite3_finalize(stmt);
+}
+
+// ===== Get Habit History By Date =====
+TEST_F(HabitManagerTest, GetHabitHistoryByRangeExistingEmpty)
+{
+    manager->addHabit("TestHabit");
+    auto history = manager->getHabitHistoryByDateRange(1, "2026-08-01", "2026-08-31");
+    EXPECT_TRUE(history.empty());
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryByRangeExistingNonEmpty)
+{
+    manager->addHabit("TestHabit");
+    manager->completeHabit(1, "2026-08-10");
+    manager->completeHabit(1, "2026-08-20");
+    manager->completeHabit(1, "2026-08-25");
+
+    auto history = manager->getHabitHistoryByDateRange(1, "2026-08-15", "2026-08-30");
+    ASSERT_EQ(history.size(), 2);
+    EXPECT_EQ(history[0].doneDate, "2026-08-25");
+    EXPECT_EQ(history[1].doneDate, "2026-08-20");
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryByRangeWithMultipleSameDay)
+{
+    manager->addHabit("TestHabit");
+    manager->completeHabit(1, "2026-08-20");
+    manager->completeHabit(1, "2026-08-20");
+    manager->completeHabit(1, "2026-08-20");
+
+    auto history = manager->getHabitHistoryByDateRange(1, "2026-08-01", "2026-08-31");
+    ASSERT_EQ(history.size(), 1);
+    EXPECT_EQ(history[0].doneDate, "2026-08-20");
+    EXPECT_EQ(history[0].count, 3);
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryByRangeExactBoundaries)
+{
+    manager->addHabit("TestHabit");
+    manager->completeHabit(1, "2026-08-01");
+    manager->completeHabit(1, "2026-08-15");
+    manager->completeHabit(1, "2026-08-31");
+
+    auto history = manager->getHabitHistoryByDateRange(1, "2026-08-01", "2026-08-31");
+    ASSERT_EQ(history.size(), 3);
+    EXPECT_EQ(history[0].doneDate, "2026-08-31");
+    EXPECT_EQ(history[1].doneDate, "2026-08-15");
+    EXPECT_EQ(history[2].doneDate, "2026-08-01");
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryByRangeNoMatch)
+{
+    manager->addHabit("TestHabit");
+    manager->completeHabit(1, "2026-08-01");
+
+    auto history = manager->getHabitHistoryByDateRange(1, "2026-08-10", "2026-08-20");
+    EXPECT_TRUE(history.empty());
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryByRangeNonExistent)
+{
+    auto history = manager->getHabitHistoryByDateRange(999, "2026-01-01", "2026-12-31");
+    EXPECT_TRUE(history.empty());
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryByRangeInvalidId)
+{
+    auto h1 = manager->getHabitHistoryByDateRange(0, "2026-01-01", "2026-12-31");
+    EXPECT_TRUE(h1.empty());
+    auto h2 = manager->getHabitHistoryByDateRange(-5, "2026-01-01", "2026-12-31");
+    EXPECT_TRUE(h2.empty());
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryByRangeInvalidDates)
+{
+    manager->addHabit("TestHabit");
+    manager->completeHabit(1, "2026-08-01");
+
+    // Empty start date
+    auto h1 = manager->getHabitHistoryByDateRange(1, "", "2026-08-31");
+    EXPECT_TRUE(h1.empty());
+
+    // Empty end date
+    auto h2 = manager->getHabitHistoryByDateRange(1, "2026-08-01", "");
+    EXPECT_TRUE(h2.empty());
+
+    // Start > End
+    auto h3 = manager->getHabitHistoryByDateRange(1, "2026-08-31", "2026-08-01");
+    EXPECT_TRUE(h3.empty());
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryByRangeDeleted)
+{
+    manager->addHabit("TestHabit");
+    manager->completeHabit(1, "2026-08-27");
+    manager->deleteHabit(1);
+
+    auto history = manager->getHabitHistoryByDateRange(1, "2026-08-01", "2026-08-31");
+    EXPECT_TRUE(history.empty());
+
+    sqlite3_stmt* stmt;
+    sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM HabitHistory WHERE HabitID = 1;", -1, &stmt, nullptr);
+    ASSERT_EQ(sqlite3_step(stmt), SQLITE_ROW);
+    EXPECT_EQ(sqlite3_column_int(stmt, 0), 0);
+    sqlite3_finalize(stmt);
+}
+
+TEST_F(HabitManagerTest, GetHabitHistoryByRangeMultipleHabits)
+{
+    manager->addHabit("HabitA");
+    manager->addHabit("HabitB");
+    manager->completeHabit(1, "2026-08-10");
+    manager->completeHabit(1, "2026-08-20");
+    manager->completeHabit(2, "2026-08-15");
+
+    auto historyA = manager->getHabitHistoryByDateRange(1, "2026-08-01", "2026-08-31");
+    ASSERT_EQ(historyA.size(), 2);
+    for (const auto& e : historyA) EXPECT_EQ(e.habitId, 1);
+
+    auto historyB = manager->getHabitHistoryByDateRange(2, "2026-08-01", "2026-08-31");
+    ASSERT_EQ(historyB.size(), 1);
+    EXPECT_EQ(historyB[0].habitId, 2);
+    EXPECT_EQ(historyB[0].doneDate, "2026-08-15");
+}

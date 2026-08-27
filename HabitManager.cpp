@@ -789,3 +789,92 @@ int HabitManager::getTotalCompletions(int habitID)
 {
     return getIntColumn(habitID, "TotalDone");
 }
+
+std::vector<HabitHistoryEntry> HabitManager::getHabitHistory(int habitID,  int days)
+{
+    std::vector<HabitHistoryEntry> history;
+
+    if (!Database::DBCheck(db)) return history;
+    if (!habitExists(habitID)) return history;
+    if (days < 0) days = 0;
+    if (days > 3650) days = 3650;
+
+    sqlite3_stmt* stmt;
+    const char* sql = R"(
+        SELECT HistoryID, HabitID, DoneDate, Count
+        FROM HabitHistory
+        WHERE HabitID = ?
+          AND DoneDate >= date('now', '-' || ? || ' days')
+          AND DoneDate <= date('now')
+        ORDER BY DoneDate DESC;
+    )";
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return history;
+    }
+
+    sqlite3_bind_int(stmt, 1, habitID);
+    sqlite3_bind_int(stmt, 2, days);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        HabitHistoryEntry entry;
+        entry.historyId = sqlite3_column_int(stmt, 0);
+        entry.habitId   = sqlite3_column_int(stmt, 1);
+        entry.doneDate  = Database::getTextOrEmpty(stmt, 2);
+        entry.count     = sqlite3_column_int(stmt, 3);
+        history.push_back(entry);
+    }
+
+    sqlite3_finalize(stmt);
+    return history;
+}
+
+std::vector<HabitHistoryEntry> HabitManager::getHabitHistoryByDateRange(
+    int habitID, 
+    const std::string& startDate, 
+    const std::string& endDate)
+{
+    std::vector<HabitHistoryEntry> history;
+
+    if (!Database::DBCheck(db)) return history;
+    if (!habitExists(habitID)) return history;
+
+    if (startDate.empty() || endDate.empty()) {
+        std::cerr << "Start date and end date cannot be empty." << std::endl;
+        return history;
+    }
+
+    sqlite3_stmt* stmt;
+    const char* sql = R"(
+        SELECT HistoryID, HabitID, DoneDate, Count
+        FROM HabitHistory
+        WHERE HabitID = ?
+          AND DoneDate >= ?
+          AND DoneDate <= ?
+        ORDER BY DoneDate DESC;
+    )";
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return history;
+    }
+
+    sqlite3_bind_int(stmt, 1, habitID);
+    sqlite3_bind_text(stmt, 2, startDate.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, endDate.c_str(), -1, SQLITE_STATIC);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        HabitHistoryEntry entry;
+        entry.historyId = sqlite3_column_int(stmt, 0);
+        entry.habitId   = sqlite3_column_int(stmt, 1);
+        entry.doneDate  = Database::getTextOrEmpty(stmt, 2);
+        entry.count     = sqlite3_column_int(stmt, 3);
+        history.push_back(entry);
+    }
+
+    sqlite3_finalize(stmt);
+    return history;
+}

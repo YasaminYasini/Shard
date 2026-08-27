@@ -49,6 +49,7 @@ struct Habit {
 };
 
 struct HabitHistoryEntry {
+    int historyId;
     int habitId;
     std::string doneDate;
     int count;
@@ -112,7 +113,8 @@ public:
 
     // ===== HabitHistory Table Functions =====
     bool completeHabit(int habitID,  const std::string& completionDate = "date(now)");
-    std::vector<HabitHistoryEntry> getHabitHistory(int habitID, int days = 365);
+std::vector<HabitHistoryEntry> getHabitHistory(int habitID, int days = 365);
+std::vector<HabitHistoryEntry> getHabitHistoryByDateRange(int habitID, const std::string& startDate, const std::string& endDate="now");
     int getSuccessRate(int habitID, int days = 30);
     HabitCalendarData getHabitCalendar(int habitID);
 

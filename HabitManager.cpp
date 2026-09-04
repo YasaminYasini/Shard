@@ -5,6 +5,10 @@
 # include <string>
 # include <memory>
 # include <vector>
+# include <ctime>
+# include <cstdio>
+# include <unordered_map>
+
 
 HabitManager::HabitManager(const std::string& dbPath)
 {
@@ -344,6 +348,7 @@ HabitManager::~HabitManager()
     }
 }
 
+
 bool HabitManager::addHabit(
     const std::string& name,
     const std::string& category,
@@ -651,6 +656,7 @@ std::vector<Habit> HabitManager::getActiveHabits(bool active)
     return habits;
 }
 
+
 bool HabitManager::archiveHabit(int habitID, bool archive)
 {
     if (!Database::DBCheck(db)) return false;
@@ -703,6 +709,8 @@ bool HabitManager::archiveHabit(int habitID, bool archive)
     return true;
 }
 
+
+
 // ===== HabitHistory Table Functions =====
 bool HabitManager::completeHabit(int habitID,  const std::string& completionDate)
 {
@@ -742,53 +750,6 @@ bool HabitManager::completeHabit(int habitID,  const std::string& completionDate
     return true;
 }
 
-
-
-// ===== Streak Functions =====
-int HabitManager::getIntColumn(int habitID, const std::string& columnName)
-{
-    if (!Database::DBCheck(db)) return -1;
-    if (!habitExists(habitID)) return -1;
-
-    sqlite3_stmt* stmt;
-    std::string sql = "SELECT " + columnName + " FROM Habit WHERE HabitID = ?;";
-
-    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) 
-    {
-        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
-        return -1;
-    }
-
-    sqlite3_bind_int(stmt, 1, habitID);
-    rc = sqlite3_step(stmt);
-
-    if (rc != SQLITE_ROW) 
-    {
-        std::cerr << "Failed to retrieve " << columnName << " for habit " << habitID << std::endl;
-        sqlite3_finalize(stmt);
-        return -1;
-    }
-
-    int result = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
-    return result;
-}
-
-int HabitManager::getCurrentStreak(int habitID) 
-{
-    return getIntColumn(habitID, "Streak");
-}
-
-int HabitManager::getBestStreak(int habitID) 
-{
-    return getIntColumn(habitID, "BestStreak");
-}
-
-int HabitManager::getTotalCompletions(int habitID) 
-{
-    return getIntColumn(habitID, "TotalDone");
-}
 
 std::vector<HabitHistoryEntry> HabitManager::getHabitHistory(int habitID,  int days)
 {
@@ -830,6 +791,7 @@ std::vector<HabitHistoryEntry> HabitManager::getHabitHistory(int habitID,  int d
     sqlite3_finalize(stmt);
     return history;
 }
+
 
 std::vector<HabitHistoryEntry> HabitManager::getHabitHistoryByDateRange(
     int habitID, 
@@ -878,3 +840,185 @@ std::vector<HabitHistoryEntry> HabitManager::getHabitHistoryByDateRange(
     sqlite3_finalize(stmt);
     return history;
 }
+
+float HabitManager::getSuccessRate(int habitID, int days)
+{
+    if (!Database::DBCheck(db)) return 0;
+    if (!habitExists(habitID)) return 0;
+    if (days <= 0) return 0;
+
+    sqlite3_stmt* stmt;
+
+    const char* sql =
+        "SELECT COUNT(DISTINCT DoneDate) FROM HabitHistory "
+        "WHERE HabitID = ? "
+        "AND DoneDate >= date('now', '-' || ? || ' days');";
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+
+    if (rc != SQLITE_OK)
+    {
+        std::cerr << "Failed to prepare statement: "
+                  << sqlite3_errmsg(db) << std::endl;
+        return 0;
+    }
+
+    sqlite3_bind_int(stmt, 1, habitID);
+    sqlite3_bind_int(stmt, 2, days);
+
+    float completedDays = 0;
+
+    if (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        completedDays = sqlite3_column_int(stmt, 0);
+    }
+
+    sqlite3_finalize(stmt);
+
+    return completedDays * 100 / days;
+}
+
+
+HabitCalendarData HabitManager::getHabitCalendar(int habitID, 
+                                                  const std::string& startDate, 
+                                                  int days)
+{
+    HabitCalendarData data;
+    if (!Database::DBCheck(db)) return data;
+    if (!habitExists(habitID)) return data;
+    if (days <= 0) return data;
+    if (days > 3650) days = 3650;
+
+    // Determining the end date (inclusive) = startDate + (days - 1)
+    sqlite3_stmt* stmt;
+    const char* rangeSql = "SELECT date(?), date(?, '+' || ? || ' days', '-1 day');";
+    int rc = sqlite3_prepare_v2(db, rangeSql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to prepare range query: " << sqlite3_errmsg(db) << std::endl;
+        return data;
+    }
+    sqlite3_bind_text(stmt, 1, startDate.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, startDate.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 3, days);
+
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        data.startDate = Database::getTextOrEmpty(stmt, 0);
+        data.endDate   = Database::getTextOrEmpty(stmt, 1);
+    } else {
+        sqlite3_finalize(stmt);
+        return data;
+    }
+    sqlite3_finalize(stmt);
+
+    // Query actual completion data within that range
+    const char* dataSql = "SELECT DoneDate, SUM(Count) FROM HabitHistory "
+                          "WHERE HabitID = ? AND DoneDate >= ? AND DoneDate <= ? "
+                          "GROUP BY DoneDate ORDER BY DoneDate ASC;";
+
+    rc = sqlite3_prepare_v2(db, dataSql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) 
+    {
+        std::cerr << "Failed to prepare data query: " << sqlite3_errmsg(db) << std::endl;
+        return data;
+    }
+    sqlite3_bind_int(stmt, 1, habitID);
+    sqlite3_bind_text(stmt, 2, data.startDate.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, data.endDate.c_str(), -1, SQLITE_STATIC);
+
+    std::unordered_map<std::string, int> countMap;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) 
+    {
+        std::string date = Database::getTextOrEmpty(stmt, 0);
+        int count = sqlite3_column_int(stmt, 1);
+        countMap[date] = count;
+    }
+    sqlite3_finalize(stmt);
+
+    // Building the full vector with zero‑filled gaps
+    auto parseDate = [](const std::string& s) -> std::tm 
+    {
+        std::tm tm = {};
+        std::sscanf(s.c_str(), "%d-%d-%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday);
+        tm.tm_year -= 1900;
+        tm.tm_mon  -= 1;
+        return tm;
+    };
+    auto formatDate = [](const std::tm& tm) -> std::string 
+    {
+        char buf[11];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm);
+        return std::string(buf);
+    };
+    auto addDays = [&](const std::string& date, int offset) -> std::string 
+    {
+        std::tm tm = parseDate(date);
+        tm.tm_mday += offset;
+        std::mktime(&tm);
+        return formatDate(tm);
+    };
+
+    std::string current = data.startDate;
+    while (current <= data.endDate) 
+    {
+        CalendarEntry entry;
+        entry.date = current;
+        auto it = countMap.find(current);
+        entry.count = (it != countMap.end()) ? it->second : 0;
+        data.entries.push_back(entry);
+        current = addDays(current, 1);
+    }
+
+    return data;
+}
+
+
+// ===== Streak Functions =====
+int HabitManager::getIntColumn(int habitID, const std::string& columnName)
+{
+    if (!Database::DBCheck(db)) return -1;
+    if (!habitExists(habitID)) return -1;
+
+    sqlite3_stmt* stmt;
+    std::string sql = "SELECT " + columnName + " FROM Habit WHERE HabitID = ?;";
+
+    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) 
+    {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return -1;
+    }
+
+    sqlite3_bind_int(stmt, 1, habitID);
+    rc = sqlite3_step(stmt);
+
+    if (rc != SQLITE_ROW) 
+    {
+        std::cerr << "Failed to retrieve " << columnName << " for habit " << habitID << std::endl;
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    int result = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+
+int HabitManager::getCurrentStreak(int habitID) 
+{
+    return getIntColumn(habitID, "Streak");
+}
+
+
+int HabitManager::getBestStreak(int habitID) 
+{
+    return getIntColumn(habitID, "BestStreak");
+}
+
+
+int HabitManager::getTotalCompletions(int habitID) 
+{
+    return getIntColumn(habitID, "TotalDone");
+}
+

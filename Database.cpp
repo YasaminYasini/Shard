@@ -5,6 +5,10 @@
 # include <memory>
 # include <vector>
 
+struct CalendarEntry {
+    std::string date;
+    int count;
+};
 
 // SQLite helper function
 bool Database::executeSQL(sqlite3* db, const std::string& sql) 

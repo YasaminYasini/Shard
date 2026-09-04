@@ -2,6 +2,10 @@
 #include "../HabitManager.h"
 #include <gtest/gtest.h>
 #include <sqlite3.h>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 
 class HabitManagerTest : public ::testing::Test
 {
@@ -585,7 +589,7 @@ TEST_F(HabitManagerTest, GetActiveHabitsAllArchived)
     EXPECT_EQ(archived[1].id, 2);
 }
 
-//TODO: test streak functions
+
 // ===== Test getIntColumn =====
 TEST_F(HabitManagerTest, GetIntColumnExistingHabit)
 {
@@ -731,6 +735,7 @@ TEST_F(HabitManagerTest, unarchiveThenComplete)
     EXPECT_EQ(manager->getIntColumn(1, "Streak"), 1);
 }
 
+
 // ===== Get Habit History =====
 TEST_F(HabitManagerTest, GetHabitHistoryExistingEmpty)
 {
@@ -781,14 +786,37 @@ TEST_F(HabitManagerTest, GetHabitHistoryExistingWithMultipleCompletionsSameDay)
 TEST_F(HabitManagerTest, GetHabitHistoryExistingLimitedDays)
 {
     manager->addHabit("TestHabit");
-    
-    manager->completeHabit(1, "2026-07-01");
-    manager->completeHabit(1, "2026-08-01");
-    manager->completeHabit(1, "2026-08-27");
-    
+
+    auto now = std::chrono::system_clock::now();
+    auto today = std::chrono::system_clock::to_time_t(now);
+
+    std::tm today_tm = *std::localtime(&today);
+
+    std::ostringstream today_ss;
+    today_ss << std::put_time(&today_tm, "%Y-%m-%d");
+
+    std::tm old_tm = today_tm;
+    old_tm.tm_mday -= 60;
+    std::mktime(&old_tm);
+
+    std::ostringstream old_ss;
+    old_ss << std::put_time(&old_tm, "%Y-%m-%d");
+
+    std::tm inside_tm = today_tm;
+    inside_tm.tm_mday -= 10;
+    std::mktime(&inside_tm);
+
+    std::ostringstream inside_ss;
+    inside_ss << std::put_time(&inside_tm, "%Y-%m-%d");
+
+    manager->completeHabit(1, old_ss.str());
+    manager->completeHabit(1, inside_ss.str());
+    manager->completeHabit(1, today_ss.str());
+
     auto history = manager->getHabitHistory(1, 30);
+
     ASSERT_EQ(history.size(), 2);
-    EXPECT_EQ(history[0].doneDate, "2026-08-27");
+    EXPECT_EQ(history[0].doneDate, today_ss.str());
 }
 
 TEST_F(HabitManagerTest, GetHabitHistoryNonExistent)
@@ -810,19 +838,37 @@ TEST_F(HabitManagerTest, GetHabitHistoryInvalid)
 TEST_F(HabitManagerTest, GetHabitHistoryInvalidDays)
 {
     manager->addHabit("TestHabit");
-    
-    manager->completeHabit(1, "2026-08-27");
-    manager->completeHabit(1, "2026-08-26");
-    
+
+    auto now = std::chrono::system_clock::now();
+    auto today = std::chrono::system_clock::to_time_t(now);
+
+    std::tm today_tm = *std::localtime(&today);
+
+    std::ostringstream today_ss;
+    today_ss << std::put_time(&today_tm, "%Y-%m-%d");
+
+    std::tm yesterday_tm = today_tm;
+    yesterday_tm.tm_mday -= 1;
+    std::mktime(&yesterday_tm);
+
+    std::ostringstream yesterday_ss;
+    yesterday_ss << std::put_time(&yesterday_tm, "%Y-%m-%d");
+
+    manager->completeHabit(1, today_ss.str());
+    manager->completeHabit(1, yesterday_ss.str());
+
     auto history0 = manager->getHabitHistory(1, 0);
+
     ASSERT_EQ(history0.size(), 1);
-    EXPECT_EQ(history0[0].doneDate, "2026-08-27");
-    
+    EXPECT_EQ(history0[0].doneDate, today_ss.str());
+
     auto historyNegative = manager->getHabitHistory(1, -5);
+
     ASSERT_EQ(historyNegative.size(), 1);
-    EXPECT_EQ(historyNegative[0].doneDate, "2026-08-27");
-    
+    EXPECT_EQ(historyNegative[0].doneDate, today_ss.str());
+
     auto historyHuge = manager->getHabitHistory(1, 99999);
+
     ASSERT_EQ(historyHuge.size(), 2);
 }
 
@@ -848,6 +894,7 @@ TEST_F(HabitManagerTest, GetHabitHistoryDeleted)
     EXPECT_EQ(count, 0);
     sqlite3_finalize(stmt);
 }
+
 
 // ===== Get Habit History By Date =====
 TEST_F(HabitManagerTest, GetHabitHistoryByRangeExistingEmpty)
@@ -970,4 +1017,124 @@ TEST_F(HabitManagerTest, GetHabitHistoryByRangeMultipleHabits)
     ASSERT_EQ(historyB.size(), 1);
     EXPECT_EQ(historyB[0].habitId, 2);
     EXPECT_EQ(historyB[0].doneDate, "2026-08-15");
+}
+
+
+// ===== Success Rate =====
+TEST_F(HabitManagerTest, GetSuccessRateNoHistory)
+{
+    manager->addHabit("TestHabit");
+    EXPECT_EQ(manager->getSuccessRate(1, 30), 0);
+}
+
+TEST_F(HabitManagerTest, GetSuccessRateWithHistory)
+{
+    manager->addHabit("TestHabit");
+
+    auto now = std::chrono::system_clock::now();
+    auto today = std::chrono::system_clock::to_time_t(now);
+
+    std::tm today_tm = *std::localtime(&today);
+
+    std::ostringstream date1;
+    std::ostringstream date2;
+    std::ostringstream date3;
+
+    std::tm tm1 = today_tm;
+    tm1.tm_mday -= 1;
+    std::mktime(&tm1);
+    date1 << std::put_time(&tm1, "%Y-%m-%d");
+
+    std::tm tm2 = today_tm;
+    tm2.tm_mday -= 2;
+    std::mktime(&tm2);
+    date2 << std::put_time(&tm2, "%Y-%m-%d");
+
+    std::tm tm3 = today_tm;
+    tm3.tm_mday -= 3;
+    std::mktime(&tm3);
+    date3 << std::put_time(&tm3, "%Y-%m-%d");
+
+    manager->completeHabit(1, date1.str());
+    manager->completeHabit(1, date2.str());
+    manager->completeHabit(1, date3.str());
+
+    EXPECT_EQ(manager->getSuccessRate(1, 30), 10);
+}
+
+TEST_F(HabitManagerTest, GetSuccessRateNonExistent)
+{
+    EXPECT_EQ(manager->getSuccessRate(999, 30), 0);
+}
+
+TEST_F(HabitManagerTest, GetSuccessRateInvalidDays)
+{
+    manager->addHabit("TestHabit");
+    manager->completeHabit(1, "2026-08-01");
+    EXPECT_EQ(manager->getSuccessRate(1, 0), 0);
+    EXPECT_EQ(manager->getSuccessRate(1, -5), 0);
+}
+
+
+// ===== Get Habit Calendar =====
+TEST_F(HabitManagerTest, GetHabitCalendarDefault) {
+    manager->addHabit("TestHabit");
+    auto data = manager->getHabitCalendar(1);
+    EXPECT_EQ(data.entries.size(), 365); // Last 365 days from today
+}
+
+TEST_F(HabitManagerTest, GetHabitCalendarSpecificStart) {
+    manager->addHabit("TestHabit");
+    // Log some dates in 2025
+    manager->completeHabit(1, "2025-01-01");
+    manager->completeHabit(1, "2025-06-15");
+    manager->completeHabit(1, "2025-12-31");
+
+    auto data = manager->getHabitCalendar(1, "2025-01-01");
+    EXPECT_EQ(data.entries.size(), 365);
+    // Spot check
+    bool foundJan1 = false, foundJun15 = false, foundDec31 = false;
+    for (const auto& e : data.entries) {
+        if (e.date == "2025-01-01") { EXPECT_EQ(e.count, 1); foundJan1 = true; }
+        if (e.date == "2025-06-15") { EXPECT_EQ(e.count, 1); foundJun15 = true; }
+        if (e.date == "2025-12-31") { EXPECT_EQ(e.count, 1); foundDec31 = true; }
+    }
+    EXPECT_TRUE(foundJan1);
+    EXPECT_TRUE(foundJun15);
+    EXPECT_TRUE(foundDec31);
+}
+
+TEST_F(HabitManagerTest, GetHabitCalendarShortWindow) {
+    manager->addHabit("TestHabit");
+    manager->completeHabit(1, "2025-01-15");
+    manager->completeHabit(1, "2025-01-16");
+
+    auto data = manager->getHabitCalendar(1, "2025-01-01", 31);
+    EXPECT_EQ(data.entries.size(), 31);
+    // Only Jan 15 and 16 should have counts > 0
+    int nonZero = 0;
+    for (const auto& e : data.entries) {
+        if (e.count > 0) nonZero++;
+    }
+    EXPECT_EQ(nonZero, 2);
+}
+
+TEST_F(HabitManagerTest, GetHabitCalendarLargeWindow)
+{
+    manager->addHabit("TestHabit");
+    
+    auto data = manager->getHabitCalendar(1, "now", 5000);
+    EXPECT_EQ(data.entries.size(), 3650);
+}
+
+TEST_F(HabitManagerTest, GetHabitCalendarFutureDate)
+{
+    manager->addHabit("TestHabit");
+    
+    auto data = manager->getHabitCalendar(1, "2030-01-01", 365);
+    EXPECT_EQ(data.entries.size(), 365);
+    
+    for (const auto& entry : data.entries) {
+        EXPECT_EQ(entry.count, 0);
+    }
 }

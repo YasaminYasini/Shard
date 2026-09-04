@@ -6,7 +6,8 @@
 #include <vector>
 #include <map>
 
-struct Habit {
+struct Habit 
+{
     int id;
     std::string name;
     std::string category;
@@ -29,7 +30,8 @@ struct Habit {
           totalDone(0),
           strength(0) {}
 
-    bool operator==(const Habit& other) const {
+    bool operator==(const Habit& other) const 
+    {
         return id == other.id &&
                name == other.name &&
                category == other.category &&
@@ -43,12 +45,14 @@ struct Habit {
                strength == other.strength;
     }
 
-    bool operator!=(const Habit& other) const {
+    bool operator!=(const Habit& other) const 
+    {
         return !(*this == other);
     }
 };
 
-struct HabitHistoryEntry {
+struct HabitHistoryEntry 
+{
     int historyId;
     int habitId;
     std::string doneDate;
@@ -69,11 +73,20 @@ struct HabitHistoryEntry {
     }
 };
 
-struct HabitCalendarData {
+
+struct CalendarEntry {
+    std::string date;
+    int count;
+};
+
+
+struct HabitCalendarData 
+{
     int habitId;
     std::string habitName;
-    std::map<std::string, int> dailyCounts;
-    std::vector<std::string> dates;
+    std::string startDate;
+    std::string endDate;
+    std::vector<CalendarEntry> entries;
     int maxCount;
     int totalCompletions;
     int streak;
@@ -87,7 +100,15 @@ struct HabitCalendarData {
           bestStreak(0) {}
 };
 
-class HabitManager {
+/**
+ * @class HabitManager
+ * @brief Manages habit tracking with SQLite persistence.
+ * 
+ * Provides CRUD operations, streak tracking (via triggers), and history retrieval.
+ * All date‑based logic uses SQLite's date functions for consistency.
+ */
+class HabitManager 
+{
 private:
     sqlite3* db;
 
@@ -100,25 +121,62 @@ public:
     ~HabitManager();
 
     // ===== Habit Table Functions =====
+    /*
+    The CRUD section of the habit manager. 
+    items such as date of creation or streak related values are not included here to encapsulate the values
+    and any modifications related to the user are implemented in more succinct functions to avoid
+    overcomplications (such as archiveHabit).
+
+    functions such as getHabit and getAllHabits are general getters, though streak related values can 
+    also be accessed using the streak related functions below in the "Streak Functions" section
+    */
     bool addHabit(const std::string& name, const std::string& category = "General", int priority = 3);
     bool deleteHabit(int habitID);
+    /**
+     * @brief Update an existing habit.
+     * @note Unlike addHabit, this does NOT clamp priority. Invalid priorities are rejected.
+     * @return false if priority is invalid or no fields changed.
+     */
     bool updateHabit(int habitID, const std::string& name = "", const std::string& category = "", int priority=-1);
     Habit getHabit(int habitID);
     bool habitExists(int habitID);
     std::vector<Habit> getAllHabits();
+    /**
+    * @brief Toggles a habit's active status.
+    * 
+    * @param archive true = archive (set Active=0), false = unarchive (set Active=1).
+    */
     std::vector<Habit> getActiveHabits(bool active = true);
     bool archiveHabit(int habitID, bool archive = true);
 
 
-
     // ===== HabitHistory Table Functions =====
     bool completeHabit(int habitID,  const std::string& completionDate = "date(now)");
-std::vector<HabitHistoryEntry> getHabitHistory(int habitID, int days = 365);
-std::vector<HabitHistoryEntry> getHabitHistoryByDateRange(int habitID, const std::string& startDate, const std::string& endDate="now");
-    int getSuccessRate(int habitID, int days = 30);
-    HabitCalendarData getHabitCalendar(int habitID);
-
+    /**
+    * @brief Retrieves habit history by days (back from today).
+    */
+    std::vector<HabitHistoryEntry> getHabitHistory(int habitID, int days = 365);
+    /**
+    * @brief Retrieves habit history for an explicit date range (inclusive).
+    */
+    std::vector<HabitHistoryEntry> getHabitHistoryByDateRange(int habitID, const std::string& startDate, const std::string& endDate="now");
+    float getSuccessRate(int habitID, int days = 30);
+    /**
+    * @brief Get calendar heatmap data for a habit over a time window.
+    * 
+    * @param habitID ID of the habit.
+    * @param startDate Start of the window (inclusive), default "now".
+    * @param days Number of days to include (default 365).
+    * @return HabitCalendarData with zero‑filled gaps and counts per day.
+    */
+    HabitCalendarData getHabitCalendar(int habitID, const std::string& startDate = "now", int days = 365);
+    
+    
     // ===== Streak Functions =====
+    /**
+    * @brief Get an integer column value from the Habit table.
+    * @return -1 if habit not found or column invalid.
+    */
     int getIntColumn(int habitID, const std::string& columnName);
     int getCurrentStreak(int habitID);
     int getBestStreak(int habitID);
